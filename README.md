@@ -1,34 +1,63 @@
-# Bitbucket Repo Manager
+# Bitbucket Repo Manager (AWS Native)
 
 A UI application to manage Bitbucket repositories, compare branches, create release branches, and view reports/deployments.
 
 ## Features
 
-1.  **Show list of configured repositories**: Managed via `config.json`.
-2.  **Compare branches**: Custom file-level comparison between any two branches.
-3.  **Create Release Branch**: Automatically creates a new branch and updates the version in `pom.xml`.
-4.  **Reports**: View code coverage, test results, and security scans.
-5.  **Deployments**: Integration with Jules pipeline to show environment status.
+-   **Dashboard**: List of repositories from `config.json` or AWS Secrets Manager.
+-   **Branch Compare**: Custom file-level comparison using `simple-git`.
+-   **Release Automation**: Branch creation and `pom.xml` version updates.
+-   **AWS Native Reports**: Integrates with AWS CodeBuild and AWS Security Hub (placeholders).
+-   **Jules Integration**: Deployment status dashboard.
 
 ## Tech Stack
 
--   **Backend**: Node.js, Express, simple-git
--   **Frontend**: React, Vite, Tailwind CSS, Lucide icons
+-   **Backend**: Node.js, Express, simple-git, AWS SDK v3
+-   **Frontend**: React, Vite, Tailwind CSS
+-   **Infrastructure**: Docker, AWS App Runner, AWS Secrets Manager
 
-## Setup
+## AWS Native Configuration
 
-1.  **Install dependencies**:
+To run as an AWS native application:
+
+1.  **Secrets Manager**: Create a secret in AWS Secrets Manager (e.g., `BitbucketRepoManagerConfig`) with the content of your `config.json`.
+2.  **Environment Variables**:
+    - `CONFIG_SECRET_ID`: The name/ID of your secret.
+    - `AWS_REGION`: Your AWS region (default: `us-east-1`).
+
+## Local Development (Docker)
+
+```bash
+docker-compose up --build
+```
+
+## AWS Deployment
+
+1.  **Build and Push to ECR**:
     ```bash
-    npm install
-    cd client && npm install
+    aws ecr create-repository --repository-name bitbucket-repo-manager
+    docker build -t bitbucket-repo-manager .
+    docker tag bitbucket-repo-manager:latest <account-id>.dkr.ecr.<region>.amazonaws.com/bitbucket-repo-manager:latest
+    aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
+    docker push <account-id>.dkr.ecr.<region>.amazonaws.com/bitbucket-repo-manager:latest
     ```
 
-2.  **Configure repositories**:
-    Edit `config.json` to add your Bitbucket repositories.
+2.  **Deploy using SAM**:
+    ```bash
+    sam deploy --guided
+    ```
 
-3.  **Local Repositories**:
-    Cloned repositories should be placed in a `repos/` directory in the root for the backend to interact with them.
+## Local Development (Manual)
 
-4.  **Run the application**:
-    - Backend: `node server.js`
-    - Frontend: `cd client && npm run dev`
+1.  **Backend**:
+    ```bash
+    npm install
+    node server.js
+    ```
+
+2.  **Frontend**:
+    ```bash
+    cd client
+    npm install
+    npm run dev
+    ```

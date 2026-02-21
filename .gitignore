@@ -5,3 +5,5 @@ client/node_modules
 dist
 build
 repos
+*.log
+verification/

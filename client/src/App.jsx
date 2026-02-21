@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Layout, Github, GitBranch, ShieldCheck, Activity, Rocket, ArrowLeft, GitCompare, ChevronRight } from 'lucide-react';
 
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = '/api';
 
 const App = () => {
   const [repos, setRepos] = useState([]);
