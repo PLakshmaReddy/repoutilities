@@ -1,0 +1,19 @@
+{
+  "repositories": [
+    {
+      "id": "repo-1",
+      "name": "payment-service",
+      "url": "https://bitbucket.org/myorg/payment-service"
+    },
+    {
+      "id": "repo-2",
+      "name": "auth-service",
+      "url": "https://bitbucket.org/myorg/auth-service"
+    },
+    {
+      "id": "repo-3",
+      "name": "inventory-management",
+      "url": "https://bitbucket.org/myorg/inventory-management"
+    }
+  ]
+}
