@@ -4,7 +4,7 @@ const bodyParser = require('body-parser');
 const fs = require('fs');
 const path = require('path');
 const { createPatch } = require('diff');
-const simpleGit = require('simple-git');
+const gitHelper = require('./gitHelper');
 const axios = require('axios');
 const { SecretsManagerClient, GetSecretValueCommand } = require("@aws-sdk/client-secrets-manager");
 const { CodeBuildClient, ListBuildsForProjectCommand, BatchGetBuildsCommand } = require("@aws-sdk/client-codebuild");
@@ -49,9 +49,8 @@ const getGit = (repoName) => {
   if (!fs.existsSync(repoPath)) {
     // In AWS Fargate, we might want to clone on demand if not persistent
     fs.mkdirSync(repoPath, { recursive: true });
-    return simpleGit(repoPath);
   }
-  return simpleGit(repoPath);
+  return gitHelper(repoPath);
 };
 
 // Routes

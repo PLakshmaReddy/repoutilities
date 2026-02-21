@@ -10,7 +10,7 @@ RUN npm run build
 FROM node:20-alpine
 WORKDIR /app
 
-# Install git for simple-git
+# Install git for repository management
 RUN apk add --no-nowarn git
 
 # Copy backend dependencies

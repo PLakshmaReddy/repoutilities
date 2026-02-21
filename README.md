@@ -12,7 +12,7 @@ A UI application to manage Bitbucket repositories, compare branches, create rele
 
 ## Tech Stack
 
--   **Backend**: Node.js, Express, simple-git, AWS SDK v3
+-   **Backend**: Node.js, Express, custom Git helper, AWS SDK v3
 -   **Frontend**: React, Vite, Tailwind CSS
 -   **Infrastructure**: Docker, AWS App Runner, AWS Secrets Manager
 
