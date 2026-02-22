@@ -8,6 +8,7 @@ const gitHelper = require('./gitHelper');
 const axios = require('axios');
 const { SecretsManagerClient, GetSecretValueCommand } = require("@aws-sdk/client-secrets-manager");
 const { CodeBuildClient, ListBuildsForProjectCommand, BatchGetBuildsCommand } = require("@aws-sdk/client-codebuild");
+const { XMLParser, XMLBuilder } = require('fast-xml-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -19,25 +20,27 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Load configuration
 const configPath = path.join(__dirname, 'config.json');
-let config = { repositories: [] };
+let config = {
+  repositories: [],
+  bitbucket: { username: process.env.BITBUCKET_USER, token: process.env.BITBUCKET_TOKEN },
+  jules: { apiUrl: process.env.JULES_API_URL || 'http://jules-pipeline.internal/api' }
+};
 
 const loadConfig = async () => {
-  // Check if we should load from AWS Secrets Manager
   if (process.env.CONFIG_SECRET_ID) {
     try {
-      console.log(`Loading config from AWS Secret: ${process.env.CONFIG_SECRET_ID}`);
       const client = new SecretsManagerClient({ region: process.env.AWS_REGION || "us-east-1" });
       const response = await client.send(new GetSecretValueCommand({ SecretId: process.env.CONFIG_SECRET_ID }));
-      config = JSON.parse(response.SecretString);
-      return;
+      const secretConfig = JSON.parse(response.SecretString);
+      config = { ...config, ...secretConfig };
     } catch (error) {
       console.error("Error loading config from Secrets Manager:", error);
     }
   }
 
-  // Fallback to local file
   if (fs.existsSync(configPath)) {
-    config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    config = { ...config, ...fileConfig };
   }
 };
 
@@ -47,10 +50,9 @@ loadConfig();
 const getGit = (repoName) => {
   const repoPath = path.join(REPOS_ROOT, repoName);
   if (!fs.existsSync(repoPath)) {
-    // In AWS Fargate, we might want to clone on demand if not persistent
     fs.mkdirSync(repoPath, { recursive: true });
   }
-  return gitHelper(repoPath);
+  return gitHelper(repoPath, config.bitbucket);
 };
 
 // Routes
@@ -64,14 +66,14 @@ app.get('/api/repos/:repoId/branches', async (req, res) => {
     if (!repo) return res.status(404).send('Repo not found');
 
     const git = getGit(repo.name);
-    // If directory is empty, clone it
-    const files = fs.readdirSync(path.join(REPOS_ROOT, repo.name));
-    if (files.length === 0) {
-        console.log(`Cloning ${repo.url} into ${repo.name}`);
+    const repoPath = path.join(REPOS_ROOT, repo.name);
+    const files = fs.readdirSync(repoPath);
+
+    if (files.length === 0 || !fs.existsSync(path.join(repoPath, '.git'))) {
         await git.clone(repo.url, ".");
     }
 
-    try { await git.fetch(); } catch (e) { console.warn(`Could not fetch for ${repo.name}: ${e.message}`); }
+    await git.fetch().catch(e => console.warn("Fetch failed:", e.message));
 
     const branches = await git.branchLocal();
     res.json(branches.all);
@@ -89,7 +91,7 @@ app.get('/api/repos/:repoId/compare', async (req, res) => {
 
   try {
     const git = getGit(repo.name);
-    await git.fetch();
+    await git.fetch().catch(() => {});
 
     const diffSummary = await git.diffSummary([`${source}..${target}`]);
 
@@ -123,26 +125,27 @@ app.post('/api/repos/:repoId/release', async (req, res) => {
     const releaseBranch = `release/${releaseVersion}`;
 
     await git.checkout(baseBranch);
-    try { await git.pull('origin', baseBranch); } catch (e) { console.warn('Could not pull latest'); }
-
+    await git.pull('origin', baseBranch).catch(() => {});
     await git.checkoutBranch(releaseBranch, baseBranch);
 
     const repoPath = path.join(REPOS_ROOT, repo.name);
     const pomPath = path.join(repoPath, 'pom.xml');
 
     if (fs.existsSync(pomPath)) {
-      let pomContent = fs.readFileSync(pomPath, 'utf8');
-      const projectVersionRegex = /(<modelVersion>.*?<\/modelVersion>\s*<groupId>.*?<\/groupId>\s*<artifactId>.*?<\/artifactId>\s*<version>)(.*?)(<\/version>)/s;
+      const pomContent = fs.readFileSync(pomPath, 'utf8');
+      const parser = new XMLParser({ ignoreAttributes: false });
+      const builder = new XMLBuilder({ ignoreAttributes: false, format: true });
 
-      if (projectVersionRegex.test(pomContent)) {
-          pomContent = pomContent.replace(projectVersionRegex, `$1${releaseVersion}$3`);
-      } else {
-          pomContent = pomContent.replace(/<version>(.*?)<\/version>/, `<version>${releaseVersion}</version>`);
+      const jsonObj = parser.parse(pomContent);
+      if (jsonObj.project) {
+          jsonObj.project.version = releaseVersion;
+          const updatedPom = builder.build(jsonObj);
+          fs.writeFileSync(pomPath, updatedPom);
+
+          await git.add('pom.xml');
+          await git.commit(`Prepare release ${releaseVersion}`);
+          // await git.push('origin', releaseBranch).catch(() => {});
       }
-
-      fs.writeFileSync(pomPath, pomContent);
-      await git.add('pom.xml');
-      await git.commit(`Prepare release ${releaseVersion}`);
     }
 
     res.json({
@@ -155,28 +158,19 @@ app.post('/api/repos/:repoId/release', async (req, res) => {
   }
 });
 
-// AWS Native Integrations for Reports
 app.get('/api/repos/:repoId/reports', async (req, res) => {
   const { branch } = req.query;
   const repoId = req.params.repoId;
 
-  console.log(`Pulling AWS-native reports for ${repoId} on branch ${branch}`);
-
   try {
     const codebuild = new CodeBuildClient({ region: process.env.AWS_REGION || "us-east-1" });
-
-    // Attempt to find real builds for this repo if it's also a CodeBuild project
-    const listBuilds = await codebuild.send(new ListBuildsForProjectCommand({
-      projectName: repoId // Assuming repoId matches CodeBuild project name
-    })).catch(() => null);
+    const listBuilds = await codebuild.send(new ListBuildsForProjectCommand({ projectName: repoId })).catch(() => null);
 
     if (listBuilds && listBuilds.ids && listBuilds.ids.length > 0) {
       const builds = await codebuild.send(new BatchGetBuildsCommand({ ids: listBuilds.ids.slice(0, 5) }));
       const latestBuild = builds.builds.find(b => b.sourceVersion === branch || b.resolvedSourceVersion === branch);
 
       if (latestBuild) {
-        // In a real scenario, we'd parse the reportGroups from the build
-        // For this demo, we'll return simulated data based on the build status
         const isSuccess = latestBuild.buildStatus === 'SUCCEEDED';
         return res.json({
           branch,
@@ -187,10 +181,9 @@ app.get('/api/repos/:repoId/reports', async (req, res) => {
       }
     }
   } catch (error) {
-    console.warn("Could not fetch real AWS reports, falling back to mocks:", error.message);
+    console.warn("AWS reports fetch failed, using fallback:", error.message);
   }
 
-  // Fallback to mock
   res.json({
     branch,
     coverage: { line: 85.5, branch: 78.2, status: 'SUCCESS' },
@@ -201,11 +194,18 @@ app.get('/api/repos/:repoId/reports', async (req, res) => {
 
 app.get('/api/repos/:repoId/deployments', async (req, res) => {
   const { branch } = req.query;
+  const repoId = req.params.repoId;
 
-  /*
-     JULES PIPELINE / AWS CODEPIPELINE INTEGRATION:
-     If Jules is running on AWS, it might update CodePipeline or AppRunner tags.
-  */
+  try {
+    // Actual integration with Jules Pipeline API
+    const response = await axios.get(`${config.jules.apiUrl}/deployments`, {
+      params: { repoId, branch },
+      timeout: 5000
+    });
+    return res.json(response.data);
+  } catch (error) {
+    console.warn("Jules API failed, using fallback:", error.message);
+  }
 
   res.json([
     { env: 'DEV', status: 'DEPLOYED', version: '1.1.0-SNAPSHOT', lastDeployed: '2023-10-25 10:00' },

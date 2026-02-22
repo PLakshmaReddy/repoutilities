@@ -33,19 +33,22 @@ docker-compose up --build
 
 ## AWS Deployment
 
-1.  **Build and Push to ECR**:
-    ```bash
-    aws ecr create-repository --repository-name bitbucket-repo-manager
-    docker build -t bitbucket-repo-manager .
-    docker tag bitbucket-repo-manager:latest <account-id>.dkr.ecr.<region>.amazonaws.com/bitbucket-repo-manager:latest
-    aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
-    docker push <account-id>.dkr.ecr.<region>.amazonaws.com/bitbucket-repo-manager:latest
-    ```
+### Automated Deployment (CI/CD)
 
-2.  **Deploy using SAM**:
-    ```bash
-    sam deploy --guided
-    ```
+This repository includes a GitHub Actions workflow in `.github/workflows/deploy.yml`. To use it:
+1.  Add the following secrets to your GitHub repository:
+    - `AWS_ACCESS_KEY_ID`
+    - `AWS_SECRET_ACCESS_KEY`
+    - `AWS_APP_RUNNER_ROLE_ARN` (The IAM role App Runner uses to access ECR and Secrets Manager)
+2.  On every push to the `main` branch, the application will be automatically built, pushed to ECR, and deployed to AWS App Runner.
+
+### Manual Deployment
+
+You can use the provided `deploy.sh` script to deploy from your local machine:
+```bash
+./deploy.sh
+```
+*Note: Ensure you have the AWS CLI configured with appropriate permissions.*
 
 ## Local Development (Manual)
 

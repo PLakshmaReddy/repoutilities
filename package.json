@@ -9,17 +9,17 @@
     "dev": "concurrently \"npm run start\" \"npm run client\""
   },
   "dependencies": {
-    "@aws-sdk/client-codebuild": "^3.995.0",
-    "@aws-sdk/client-secrets-manager": "^3.995.0",
-    "@aws-sdk/client-securityhub": "^3.995.0",
-    "adm-zip": "^0.5.16",
-    "axios": "^1.13.5",
-    "body-parser": "^2.2.2",
-    "cors": "^2.8.6",
-    "diff": "^8.0.3",
-    "express": "^5.2.1"
+    "@aws-sdk/client-codebuild": "^3.700.0",
+    "@aws-sdk/client-secrets-manager": "^3.700.0",
+    "@aws-sdk/client-securityhub": "^3.700.0",
+    "axios": "^1.7.0",
+    "body-parser": "^1.20.0",
+    "cors": "^2.8.5",
+    "diff": "^5.2.0",
+    "express": "^4.21.0",
+    "fast-xml-parser": "^4.5.0"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.0"
   }
 }

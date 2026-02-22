@@ -1,17 +1,20 @@
-const { execFileSync } = require('child_process');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 
 class GitHelper {
-  constructor(repoPath) {
+  constructor(repoPath, credentials = null) {
     this.repoPath = repoPath;
+    this.credentials = credentials; // { username, token }
   }
 
-  exec(args) {
+  async exec(args) {
     try {
-      return execFileSync('git', args, {
+      const { stdout } = await execFileAsync('git', args, {
         cwd: this.repoPath,
         encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe']
-      }).trim();
+      });
+      return stdout.trim();
     } catch (error) {
       const stderr = error.stderr ? error.stderr.toString() : '';
       throw new Error(`Git command failed: git ${args.join(' ')}\nError: ${stderr || error.message}`);
@@ -19,7 +22,7 @@ class GitHelper {
   }
 
   async branchLocal() {
-    const output = this.exec(['branch', '--format=%(refname:short)']);
+    const output = await this.exec(['branch', '--format=%(refname:short)']);
     const branches = output.split('\n').filter(b => b.trim() !== '');
     return { all: branches };
   }
@@ -29,21 +32,25 @@ class GitHelper {
   }
 
   async clone(url, target) {
-    return execFileSync('git', ['clone', url, target], {
+    let authenticatedUrl = url;
+    if (this.credentials && this.credentials.username && this.credentials.token) {
+      // Basic auth injection into URL for cloning
+      // Example: https://username:token@bitbucket.org/repo.git
+      authenticatedUrl = url.replace('https://', `https://${this.credentials.username}:${this.credentials.token}@`);
+    }
+    return execFileAsync('git', ['clone', authenticatedUrl, target], {
       cwd: this.repoPath,
       encoding: 'utf8'
     });
   }
 
   async diffSummary(args) {
-    // args is typically ["source..target"]
-    const output = this.exec(['diff', '--name-only', ...args]);
+    const output = await this.exec(['diff', '--name-only', ...args]);
     const files = output.split('\n').filter(f => f.trim() !== '').map(f => ({ file: f }));
     return { files };
   }
 
   async show(args) {
-    // args is typically ["branch:file"]
     return this.exec(['show', ...args]);
   }
 
@@ -65,13 +72,17 @@ class GitHelper {
 
   async commit(message) {
     try {
-      this.exec(['config', 'user.name', 'Repo Manager']);
-      this.exec(['config', 'user.email', 'repo-manager@internal.com']);
+      await this.exec(['config', 'user.name', 'Repo Manager']);
+      await this.exec(['config', 'user.email', 'repo-manager@internal.com']);
     } catch (e) {
       // Ignore if it fails
     }
     return this.exec(['commit', '-m', message]);
   }
+
+  async push(remote, branch) {
+    return this.exec(['push', remote, branch]);
+  }
 }
 
-module.exports = (path) => new GitHelper(path);
+module.exports = (path, credentials) => new GitHelper(path, credentials);
