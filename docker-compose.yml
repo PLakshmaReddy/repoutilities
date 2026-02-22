@@ -7,7 +7,6 @@ services:
       - "3001:3001"
     environment:
       - PORT=3001
-      - AWS_REGION=us-east-1
     volumes:
       - ./repos:/app/repos
       - ./config.json:/app/config.json

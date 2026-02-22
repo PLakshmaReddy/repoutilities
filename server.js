@@ -6,8 +6,6 @@ const path = require('path');
 const { createPatch } = require('diff');
 const gitHelper = require('./gitHelper');
 const axios = require('axios');
-const { SecretsManagerClient, GetSecretValueCommand } = require("@aws-sdk/client-secrets-manager");
-const { CodeBuildClient, ListBuildsForProjectCommand, BatchGetBuildsCommand } = require("@aws-sdk/client-codebuild");
 const { XMLParser, XMLBuilder } = require('fast-xml-parser');
 
 const app = express();
@@ -26,18 +24,7 @@ let config = {
   jules: { apiUrl: process.env.JULES_API_URL || 'http://jules-pipeline.internal/api' }
 };
 
-const loadConfig = async () => {
-  if (process.env.CONFIG_SECRET_ID) {
-    try {
-      const client = new SecretsManagerClient({ region: process.env.AWS_REGION || "us-east-1" });
-      const response = await client.send(new GetSecretValueCommand({ SecretId: process.env.CONFIG_SECRET_ID }));
-      const secretConfig = JSON.parse(response.SecretString);
-      config = { ...config, ...secretConfig };
-    } catch (error) {
-      console.error("Error loading config from Secrets Manager:", error);
-    }
-  }
-
+const loadConfig = () => {
   if (fs.existsSync(configPath)) {
     const fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     config = { ...config, ...fileConfig };
@@ -144,7 +131,6 @@ app.post('/api/repos/:repoId/release', async (req, res) => {
 
           await git.add('pom.xml');
           await git.commit(`Prepare release ${releaseVersion}`);
-          // await git.push('origin', releaseBranch).catch(() => {});
       }
     }
 
@@ -160,30 +146,8 @@ app.post('/api/repos/:repoId/release', async (req, res) => {
 
 app.get('/api/repos/:repoId/reports', async (req, res) => {
   const { branch } = req.query;
-  const repoId = req.params.repoId;
 
-  try {
-    const codebuild = new CodeBuildClient({ region: process.env.AWS_REGION || "us-east-1" });
-    const listBuilds = await codebuild.send(new ListBuildsForProjectCommand({ projectName: repoId })).catch(() => null);
-
-    if (listBuilds && listBuilds.ids && listBuilds.ids.length > 0) {
-      const builds = await codebuild.send(new BatchGetBuildsCommand({ ids: listBuilds.ids.slice(0, 5) }));
-      const latestBuild = builds.builds.find(b => b.sourceVersion === branch || b.resolvedSourceVersion === branch);
-
-      if (latestBuild) {
-        const isSuccess = latestBuild.buildStatus === 'SUCCEEDED';
-        return res.json({
-          branch,
-          coverage: { line: isSuccess ? 88.5 : 45.0, branch: isSuccess ? 80.0 : 30.0, status: isSuccess ? 'SUCCESS' : 'FAILURE' },
-          tests: { passed: isSuccess ? 150 : 100, failed: isSuccess ? 0 : 50, skipped: 5, status: isSuccess ? 'SUCCESS' : 'FAILURE' },
-          security: { high: 0, medium: 1, low: 3, status: 'SUCCESS' }
-        });
-      }
-    }
-  } catch (error) {
-    console.warn("AWS reports fetch failed, using fallback:", error.message);
-  }
-
+  // Reverted to mock/simulated data as AWS integration is removed
   res.json({
     branch,
     coverage: { line: 85.5, branch: 78.2, status: 'SUCCESS' },
@@ -197,7 +161,7 @@ app.get('/api/repos/:repoId/deployments', async (req, res) => {
   const repoId = req.params.repoId;
 
   try {
-    // Actual integration with Jules Pipeline API
+    // Integration with Jules Pipeline API
     const response = await axios.get(`${config.jules.apiUrl}/deployments`, {
       params: { repoId, branch },
       timeout: 5000
